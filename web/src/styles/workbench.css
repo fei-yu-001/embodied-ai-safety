@@ -1,0 +1,59 @@
+/* Shared workbench surfaces. The old holographic override layer is not loaded. */
+body .shell :is(.panel,.tool-config,.jog,.bar,.telemetry) {background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow-card);color:var(--ink)}
+body .shell :is(.panel,.jog) {padding:20px}
+body .shell :is(h2,.card-title) {font-size:15px;line-height:1.35;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);margin:0 0 16px}
+body .shell :is(.note,.mini,.hint,.muted,.kpi-label) {color:var(--muted);font-size:12px;line-height:1.55}
+body .shell :is(.warn,.st.unknown) {color:var(--warn)}
+body .shell :is(.bad,.st.violation) {color:var(--bad)}
+body .shell :is(.pill,.st) {background:#edf2ed;color:#45635a;border:1px solid #dce5dc;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:500;white-space:nowrap}
+body .shell :is(.pill.failed,.pill.interrupted,.st.violation) {color:#9b3438;background:#fbebea;border-color:#edcecb}
+body .shell :is(.st.ok,.pill.running) {background:#e8f1e9;color:#32674f;border-color:#ccdfce}
+body .shell .pill.ghost {color:var(--muted);background:#f1f3ef}
+body .shell :is(.caps li,.caps li.on) {color:#55766a;border-color:#dce4db;background:#f2f6ef;font-size:12px;min-height:28px;display:flex;align-items:center}
+body .shell .caps li:not(.on) {color:#7e8580;background:#f4f4f0}
+body .shell .kpi {background:#f4f6f0;border:1px solid #e5e9df;border-radius:16px;padding:12px;min-width:0}
+body .shell .kpi-value {color:var(--ink);font-size:24px;font-weight:600;letter-spacing:-.045em}
+body .shell :is(.rows li,.card,.segment) {border-color:#e0e6dd;background:#f6f7f2;border-radius:12px}
+body .shell .timeline-line {fill:none;stroke:#557B79;stroke-width:1.4;vector-effect:non-scaling-stroke;filter:none}
+body .shell .telemetry-chart {min-height:40px;flex:1}
+body .shell .telemetry-chart svg {height:40px}
+body .shell .telemetry {padding:16px 20px;gap:10px;overflow:auto;min-height:0}
+body .shell .telemetry-head h2 {margin:0}
+body .shell .telemetry .kpi-value {font-size:19px}
+body .shell .telemetry .kpi.is-empty-hint .kpi-value {font-size:15px}
+body .shell .telemetry .kpi {padding:8px 12px}
+body .shell .telemetry .events {display:none}
+body .shell .timeline-empty {font-size:12px;color:var(--muted);min-height:35px;display:grid;place-items:center}
+body .shell .chart-note {font-size:11px}
+body .shell .tool-safety .head {align-items:center;gap:8px}
+body .shell .tool-safety .head h2 {margin:0}
+body .shell .tool-safety .readout dl {font-size:12px;gap:8px}
+body .shell .tool-safety .rows {font-size:12px}
+body .shell .tool-safety .events {max-height:160px;overflow:auto}
+body .shell .tool-safety .kpi {margin-top:16px}
+body .shell .tool-config > summary {display:flex;align-items:center;gap:10px;min-height:60px;padding:16px 20px;cursor:pointer;list-style:none;font-weight:500}
+body .shell .tool-config > summary::after {content:'+';margin-left:auto;font-size:20px;color:var(--muted)}
+body .shell .tool-config[open] > summary::after {content:'−'}
+body .shell .tool-config .tool-safety {border:0;border-radius:0 0 24px 24px;box-shadow:none;border-top:1px solid var(--line)}
+body .shell :is(.tree li,.tree button) {color:var(--ink)}
+body .shell .tree li.selected {background:#e3ece5;border-color:#b6cdc0}
+body .shell .tree .tag {color:var(--muted)}
+body .shell .scene3d,body .shell .viewport {min-height:0;border:0;border-radius:26px;background:#d8e3dc;box-shadow:none}
+body .shell .scene3d .hud {top:auto;bottom:88px;left:20px;max-width:calc(100% - 40px);gap:6px}
+body .shell .scene3d .tag {background:rgba(245,248,242,.9);color:#354f47;border:1px solid rgba(255,255,255,.5);font-size:11px;backdrop-filter:blur(8px)}
+body .shell .scene3d .tools {top:84px;right:20px;gap:6px;flex-direction:column}
+body .shell .scene3d .tools button {min-height:38px;min-width:44px;padding:6px 12px;background:rgba(245,248,242,.9);border-color:rgba(255,255,255,.5);color:#354f47;font-size:12px;backdrop-filter:blur(10px)}
+body .shell .scene3d .tools button.on {background:#d9e8dd}
+body .shell .scene3d .note {left:20px;bottom:144px;max-width:calc(100% - 40px);color:#fff;background:rgba(29,51,48,.72);padding:6px 10px;border-radius:8px;font-size:10px;max-height:42px;overflow:auto;opacity:.8}
+body .shell .viewport .hud {top:auto;bottom:88px}
+body .shell .status-panel dl,body .shell .panel dl {overflow-wrap:anywhere}
+body .shell .panel dd {color:var(--ink)}
+body .shell :is(.type,.seq,.why) {color:var(--muted)}
+body .shell .banner {margin:0;padding:12px 20px;color:#973d35;background:#fbebe5;border:1px solid #edc9bb;border-radius:16px;font-size:13px}
+@media(max-width:1180px) {body .shell .scene3d .tools{top:80px}}
+@media(max-width:640px) {body .shell :is(.panel,.jog){padding:16px}body .shell .scene3d .tools{right:12px;top:80px}body .shell .scene3d .tools button{min-height:44px}body .shell .scene3d .hud{left:12px;bottom:142px}body .shell .scene3d .note{left:12px;bottom:185px;max-width:calc(100% - 24px)}body .shell .telemetry{padding:16px}body .shell .telemetry .kpi-value{font-size:18px}}
+
+
+body .shell .kpi-label,body .shell .kpi-value {display:block}
+body .shell .kpi {display:flex;flex-direction:column;gap:4px}
+body .shell .scene3d .hud {bottom:140px}

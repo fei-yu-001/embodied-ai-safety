@@ -1,0 +1,37 @@
+# Local state and credentials
+.git/
+.scratch/
+.cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*accounts*.json
+# Generated/runtime files
+data/
+*.log
+MUJOCO_LOG.TXT
+node_modules/
+dist/
+dist-*/
+.venv/
+venv/
+# External simulator source and downloaded assets are installed separately
+experiments/envs/
+experiments/runs/
+experiments/scripts/output/
+experiments/system/validation/
+experiments/hwd/
+# Local handoff/reference material
+交接文档.md
+docs/txt.txt
+
+*.pid
+experiments/system/logs/
