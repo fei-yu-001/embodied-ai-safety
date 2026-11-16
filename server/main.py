@@ -66,7 +66,8 @@ def main():
     print(f"PRISM workbench: http://127.0.0.1:{port}")
     print(f"worker backend: {backend}" + ("" if backend == "robocasa" else " (no physics loaded)"))
     print("console authentication: enabled (token supplied through PRISM_TOKEN)")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    # Keep the socket peer for the loopback WebSocket guard behind Nginx.
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=False)
 
 
 if __name__ == "__main__":
