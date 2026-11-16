@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { api, envelope, getToken, setToken } from './api.js'
+import { api, envelope, getToken, setToken, observeAuthFailures } from './api.js'
 import { createHoldGesture } from './holdGesture.js'
 import { getJogProfile } from './jogSettings.js'
 import Viewport from './components/Viewport.vue'
@@ -26,6 +26,68 @@ const DIRECTIONS = {
 }
 
 const token = ref(getToken())
+const authenticated = ref(false)
+const authChecking = ref(false)
+const loginOpen = ref(!token.value)
+const loginMessage = ref('请输入控制台令牌登录')
+const tokenInput = ref(null)
+
+function openLogin() {
+  loginOpen.value = true
+  nextTick(() => tokenInput.value?.focus())
+}
+
+function requireLogin(message) {
+  const firstFailure = authenticated.value || !loginOpen.value || Boolean(getToken())
+  authenticated.value = false
+  setToken('')
+  // Preserve an in-progress entry when a background poll reports the same failure.
+  if (firstFailure) token.value = ''
+  if (firstFailure || !loginMessage.value) loginMessage.value = message
+  sceneStale.value = true
+  disconnectStream()
+  clearInterval(keepaliveTimer)
+  keepaliveTimer = null
+  endHold()
+  if (firstFailure) openLogin()
+  else loginOpen.value = true
+}
+
+const stopAuthObserver = observeAuthFailures(requireLogin)
+
+async function login() {
+  if (authChecking.value) return
+  if (!token.value.trim()) {
+    loginMessage.value = '请输入控制台令牌登录'
+    openLogin()
+    return
+  }
+  authChecking.value = true
+  authenticated.value = false
+  setToken(token.value)
+  try {
+    await api.verifyAuth()
+    authenticated.value = true
+    loginOpen.value = false
+    loginMessage.value = ''
+    error.value = ''
+    if (session.value) {
+      connectStream()
+      await refresh()
+      await pullEvents()
+    } else if (attachId.value) await attach()
+  } catch (failure) {
+    authenticated.value = false
+    loginMessage.value = failure.message
+    openLogin()
+  } finally {
+    authChecking.value = false
+    if (loginOpen.value) {
+      await nextTick()
+      tokenInput.value?.focus()
+    }
+  }
+}
 const settingsOpen = ref(false)
 const settingsButton = ref(null)
 function closeSettings() { settingsOpen.value = false; queueMicrotask(() => settingsButton.value?.focus()) }
@@ -146,12 +208,9 @@ let keepaliveTimer = null
 
 const frameSeq = computed(() => session.value?.environment?.frame_seq || 0)
 
-function saveToken() {
-  setToken(token.value)
-  error.value = ''
-}
-
 async function createSession() {
+  if (creating.value || authChecking.value) return
+  if (!authenticated.value || !getToken()) { openLogin(); return }
   creating.value = true
   error.value = ''
   try {
@@ -193,7 +252,7 @@ function resetSceneState() {
 }
 
 async function refresh() {
-  if (!session.value) return
+  if (!authenticated.value || !session.value) return
   try {
     session.value = await api.getSession(session.value.id)
   } catch (failure) {
@@ -202,6 +261,7 @@ async function refresh() {
 }
 
 async function attach() {
+  if (!authenticated.value) { openLogin(); return }
   const id = attachId.value.trim()
   if (!id) return
   try {
@@ -222,6 +282,7 @@ function appendEvents(incoming) {
 }
 
 async function pollScene() {
+  if (!authenticated.value) return
   if (!session.value) {
     resetSceneState()
     return
@@ -285,7 +346,7 @@ async function pollScene() {
 }
 
 async function pullEvents() {
-  if (!session.value) return
+  if (!authenticated.value || !session.value) return
   try {
     const payload = await api.events(session.value.id, eventCursor)
     appendEvents(payload.events)
@@ -297,7 +358,7 @@ async function pullEvents() {
 function connectStream() {
   disconnectStream()
   const id = session.value?.id
-  if (!id) return
+  if (!authenticated.value || !id) return
   const token = getToken()
   if (!token) return
   try {
@@ -347,6 +408,7 @@ function disconnectStream() {
 }
 
 async function run(command, args = null) {
+  if (!authenticated.value) { openLogin(); return }
   if (!session.value || busy.value) return
   busy.value = true
   error.value = ''
@@ -383,6 +445,7 @@ async function acknowledgedCommand(id, command, args) {
 }
 
 async function grip(mode) {
+  if (!authenticated.value) { openLogin(); return }
   if (!session.value || busy.value || holding.value) return
   busy.value = true
   error.value = ''
@@ -433,6 +496,7 @@ const holdGesture = createHoldGesture({
   },
 })
 function startHold(direction) {
+  if (!authenticated.value) { openLogin(); return }
   if (!session.value || busy.value || !['READY','PAUSED','RUNNING'].includes(session.value.state)) return
   return holdGesture.start(direction)
 }
@@ -460,8 +524,9 @@ onMounted(() => {
   const preset = new URLSearchParams(window.location.search).get('session')
   if (preset) {
     attachId.value = preset
-    attach()
   }
+  if (getToken()) login()
+  else openLogin()
   window.addEventListener('blur', onBlur)
   document.addEventListener('visibilitychange', onVisibilityChange)
   sessionTimer = setInterval(async () => {
@@ -496,6 +561,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  stopAuthObserver()
   endHold()
   window.removeEventListener('blur', onBlur)
   document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -518,15 +584,16 @@ onBeforeUnmount(() => {
         <button :class="{ active: page === 'evaluation' }" @click="page = 'evaluation'">安全测评</button>
       </nav>
       <div class="header-actions">
+        <button class="login-trigger" :aria-expanded="loginOpen" aria-controls="console-login" @click="openLogin">{{ authenticated ? '更换令牌' : '登录' }}</button>
         <span class="connection" :class="{ connected: session?.live }"><i />{{ session?.live ? '仿真已连接' : '等待连接' }}</span>
-        <button ref="settingsButton" class="settings-trigger" :aria-expanded="settingsOpen" aria-label="界面与连接设置" @click="settingsOpen = !settingsOpen">
+        <button ref="settingsButton" class="settings-trigger" :aria-expanded="settingsOpen" aria-label="界面设置与控制台登录" @click="settingsOpen = !settingsOpen">
+          <span>设置</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--color-paper)"/><circle cx="15" cy="17" r="3" fill="var(--color-paper)"/></svg>
         </button>
       </div>
-      <section v-if="settingsOpen" class="settings-panel panel" aria-label="界面与连接设置" @keydown.esc="closeSettings">
-        <div class="section-heading"><h2>界面与连接</h2><button aria-label="关闭设置" @click="closeSettings">×</button></div>
-        <label>控制台令牌<input v-model="token" type="password" placeholder="输入本机控制台令牌" @change="saveToken" /></label>
-        <button class="primary" @click="saveToken">保存连接设置</button>
+      <section v-if="settingsOpen" class="settings-panel panel" aria-label="界面设置与控制台登录" @keydown.esc="closeSettings">
+        <div class="section-heading"><h2>界面与登录</h2><button aria-label="关闭设置" @click="closeSettings">×</button></div>
+        <button @click="closeSettings(); openLogin()">{{ authenticated ? '更换控制台令牌' : '登录控制台' }}</button>
         <label class="check-row"><input v-model="reduceTransparency" type="checkbox" />降低透明度</label>
         <label class="check-row"><input v-model="frostedGlass" type="checkbox" />使用磨砂玻璃</label>
         <p class="note">清透材质在兼容浏览器中启用。降低透明度后使用稳定表面。</p>
@@ -534,9 +601,16 @@ onBeforeUnmount(() => {
       </section>
     </header>
 
-    <p v-if="error" class="banner" role="alert">{{ error }}</p>
+    <form v-if="loginOpen" id="console-login" class="login-panel panel" aria-label="控制台登录" @submit.prevent="login">
+      <div><strong>控制台登录</strong><p id="login-message" role="status">{{ loginMessage || '输入控制台令牌' }}</p></div>
+      <label for="console-token">控制台令牌</label>
+      <input id="console-token" ref="tokenInput" v-model="token" type="password" autocomplete="off" placeholder="输入控制台令牌" aria-describedby="login-message" :disabled="authChecking" />
+      <button class="primary" type="submit" :disabled="authChecking">{{ authChecking ? '验证中…' : '登录' }}</button>
+      <button v-if="authenticated" type="button" @click="loginOpen = false">取消</button>
+    </form>
+    <p v-if="error && !loginOpen" class="banner" role="alert">{{ error }}</p>
     <div v-if="legacyScene" class="legacy-notice" role="status"><div><strong>当前会话由旧版仿真进程提供，只包含简化几何。</strong><span>完整厨房、机械臂模型与新版控制在独立工作台中加载。</span></div><a :href="completeWorkbenchUrl" target="_blank" rel="noopener">打开完整模型工作台 ↗</a></div>
-    <EvaluationPanel v-if="page === 'evaluation'" />
+    <EvaluationPanel v-if="page === 'evaluation' && authenticated" />
 
     <main v-show="page === 'workbench'" class="workspace three-col">
       <aside class="left column" aria-label="环境与场景配置">
@@ -548,7 +622,7 @@ onBeforeUnmount(() => {
           <label>仿真任务<input v-model="form.env_id" aria-label="任务" /></label>
           <div class="row"><label>随机种子<input v-model="form.seed" type="number" min="0" /></label><label>控制频率 · Hz<input v-model="form.control_freq" type="number" min="5" max="50" /></label></div>
           <label>机器人策略<select v-model="form.policy"><option value="hold">静止保持 · 手动调试</option><option value="random">随机动作 · 控制链验证</option></select></label>
-          <button class="primary load-button" :disabled="creating" @click="createSession"><span>{{ creating ? '正在准备厨房…' : '加载仿真环境' }}</span><span aria-hidden="true">↗</span></button>
+          <button class="primary load-button" :disabled="creating || authChecking" @click="createSession"><span>{{ creating ? '正在准备厨房…' : '加载仿真环境' }}</span><span aria-hidden="true">↗</span></button>
           <p v-if="creating" class="note">正在载入厨房模型…</p>
           <details class="attach-details"><summary>接入已有会话</summary><div class="attach-row"><input v-model="attachId" placeholder="sess_…" aria-label="会话编号" /><button @click="attach">接入</button></div></details>
         </section>
@@ -569,7 +643,7 @@ onBeforeUnmount(() => {
             <svg class="welcome-illustration" viewBox="0 0 320 190" fill="none" aria-hidden="true"><path d="m25 147 130-66 140 64-128 72Z" fill="#c9d8cd" opacity=".5"/><path d="m57 128 105-52 100 45v28l-101 50-104-44Z" fill="#d8e2d6" stroke="#9caf9d"/><path d="M57 128v-54l104-51 101 46v52M161 23v125M80 117V78m25 27V65m25 28V54m52 40V60m24 45V71m25 46V84" stroke="#9caf9d"/><path d="m157 141-7-25 22-31-20-29" stroke="#6a8c80" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/><circle cx="150" cy="116" r="10" fill="#e6eee5" stroke="#6a8c80" stroke-width="4"/><circle cx="172" cy="85" r="9" fill="#e6eee5" stroke="#6a8c80" stroke-width="4"/><path d="m152 56-9-6-7 7m16-1 2-10 10-1" stroke="#6a8c80" stroke-width="4" stroke-linecap="round"/></svg>
             <span class="welcome-label">场景待加载 · 示意图</span>
             <h2>让每一次动作，都有据可查。</h2><p>加载厨房环境，观察机械臂的行为，<br />配置保护区并记录真实安全测评结果。</p>
-            <button class="primary" :disabled="creating" @click="createSession">{{ creating ? '加载中…' : '进入厨房实验' }} <span aria-hidden="true">↗</span></button>
+            <button class="primary" :disabled="creating || authChecking" @click="createSession">{{ creating ? '加载中…' : '进入厨房实验' }} <span aria-hidden="true">↗</span></button>
           </div>
           <div class="stage-toolbar"><LiquidTabs v-model="viewMode" :items="viewItems" :opaque="reduceTransparency" :frosted="frostedGlass" /><LiquidGlass class="stage-task" light :opaque="reduceTransparency" :frosted="frostedGlass"><span>{{ session ? taskName : 'RoboCasa Kitchen' }}</span></LiquidGlass></div>
           <CommandBar v-if="session" class="stage-playback" :session="session" :busy="busy || Boolean(holding)" :opaque="reduceTransparency" :frosted="frostedGlass" @command="run" />
@@ -580,7 +654,7 @@ onBeforeUnmount(() => {
       <aside class="right column" aria-label="会话状态与安全风险">
         <div class="section-intro"><span class="eyebrow">OBSERVE & EVALUATE</span><h2>安全观测</h2></div>
         <ToolSafetyPanel mode="assessment" :model-value="form.tool_safety" :scene="sceneData" :safety="sceneData?.tool_safety" @configure="configureSafety" />
-        <StatusPanel :session="session" :scene="sceneData" :stale="sceneStale" :lease="lease" :last-error="error" />
+        <StatusPanel :session="session" :scene="sceneData" :stale="sceneStale" :lease="lease" :last-error="loginOpen ? '' : error" />
       </aside>
     </main>
 
@@ -594,12 +668,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.login-panel{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:12px 24px;padding:16px 20px;flex-shrink:0}.login-panel p{margin:4px 0 0;font-size:13px}.login-panel input{flex:1;min-width:180px;max-width:360px}.login-panel input:focus-visible{outline:2px solid var(--color-focus,#557b79);outline-offset:3px}.login-panel label{font-size:13px}.login-trigger{white-space:nowrap}@media(max-width:640px){.login-panel{margin:12px}.login-panel>div{width:100%}}
+
 .shell{height:auto;min-height:100dvh;padding:0 24px 20px;max-width:1920px;margin:auto;display:flex;flex-direction:column;gap:18px}
 .topbar{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:88px;flex:0 0 auto;border-bottom:1px solid var(--line);gap:24px}
 .brand{min-height:44px;display:flex;align-items:center;gap:10px;justify-self:start;color:var(--ink);text-decoration:none;font-size:22px;font-weight:600;letter-spacing:.08em;line-height:1.2}
 .brand svg{width:38px;height:38px;color:#436a5b}.brand-caption{display:block;font-size:10px;font-weight:400;letter-spacing:.08em;color:var(--muted);margin-top:4px}
 .page-nav{display:flex;gap:4px;background:#e8ece4;border-radius:999px;padding:4px}.page-nav button{border:0;background:transparent;font-size:13px;padding:10px 22px}.page-nav button.active{background:#fff;box-shadow:0 2px 5px #203b3010}
-.header-actions{justify-self:end;display:flex;align-items:center;gap:18px}.connection{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.connection i,.scene-state i{width:6px;height:6px;border-radius:50%;background:#a6b1a3}.connection.connected i{background:#5b9371}.settings-trigger{background:transparent;border-color:var(--line);padding:10px;display:grid;place-items:center}.settings-trigger svg{width:22px;height:22px}
+.header-actions{justify-self:end;display:flex;align-items:center;gap:18px}.connection{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.connection i,.scene-state i{width:6px;height:6px;border-radius:50%;background:#a6b1a3}.connection.connected i{background:#5b9371}.settings-trigger{grid-auto-flow:column;gap:6px;background:transparent;border-color:var(--line);padding:10px;display:grid;place-items:center}.settings-trigger svg{width:22px;height:22px}
 .settings-panel{position:absolute;z-index:30;right:0;top:78px;width:330px;padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:0 16px 40px #13252922}.settings-panel .primary{width:100%;margin-bottom:16px}.settings-panel .section-heading button{padding:0;font-size:24px}.settings-panel .check-row{display:flex;flex-direction:row;align-items:center;gap:10px;min-height:44px;margin:0}.settings-status{font-size:12px;color:var(--muted)}
 .workspace{flex:1;display:grid;grid-template-columns:minmax(250px,23fr) minmax(0,54fr) minmax(250px,23fr);gap:20px;min-height:0;align-items:start}.column{min-height:0;min-width:0;display:flex;flex-direction:column;gap:16px}.left,.right{overflow:visible;}.left>*:not(.workspace-footnote),.right>*{flex-shrink:0}.center{overflow:visible}
 .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.section-heading h2{margin:0}.eyebrow{display:block;font-size:10px;letter-spacing:.14em;color:var(--muted);margin-bottom:6px}.section-number{font-size:24px;font-weight:400;color:#becabd;letter-spacing:-.04em}.section-intro{padding:4px 4px 0}.section-intro h2{font-size:20px;margin:0;font-weight:500}

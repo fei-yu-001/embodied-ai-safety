@@ -1,0 +1,30 @@
+[Unit]
+Description=PRISM embodied AI safety workbench
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ddyu
+Group=ddyu
+WorkingDirectory=/opt/prism/current
+EnvironmentFile=/opt/prism/shared/prism.env
+ExecStart=/opt/prism/shared/venv/bin/python -X utf8 -m server.main
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/prism/shared
+MemoryHigh=20G
+MemoryMax=24G
+MemorySwapMax=2G
+CPUQuota=1600%
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

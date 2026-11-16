@@ -89,12 +89,16 @@ def create_app(service, token, legacy_runs_dir=None, legacy_output_dir=None, fro
             return _error(403, "forbidden_host", "仅支持本机访问")
         if request.url.path.startswith("/api/v1") and request.url.path != "/api/v1/health":
             if request.headers.get("x-console-token") != token:
-                return _error(403, "forbidden_token", "请刷新控制台后重试")
+                return _error(403, "forbidden_token", "令牌无效，请重新登录")
         return await call_next(request)
 
     @app.get("/api/v1/health")
     def health():
         return {"api": "ok", "worker": "separate_process", "simulation": "not_reported"}
+
+    @app.get("/api/v1/auth")
+    def auth():
+        return JSONResponse({"authenticated": True}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/v1/sessions", status_code=201)
     def create_session(body: SessionCreateIn | None = None):

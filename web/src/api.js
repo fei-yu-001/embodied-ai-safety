@@ -1,14 +1,66 @@
 const TOKEN_KEY = 'prism.consoleToken'
+const authListeners = new Set()
+const LOGIN_REQUIRED = '请输入控制台令牌登录'
+const LOGIN_EXPIRED = '令牌无效，请重新登录'
+
+function requireToken() {
+  if (getToken()) return
+  notifyAuthRequired('token_required', '')
+  const error = new Error(LOGIN_REQUIRED)
+  error.status = 403
+  error.code = 'token_required'
+  throw error
+}
+
+function notifyAuthRequired(code, token) {
+  // A response sent with an old credential must not invalidate a new login.
+  if (token !== getToken()) return
+  for (const listener of authListeners) listener(code === 'token_required' ? LOGIN_REQUIRED : LOGIN_EXPIRED)
+}
+
+// Some panels fetch frames/evaluations directly. Observe their 403s too, within
+// this app's lifetime, without changing unrelated fetches or control-lease errors.
+export function observeAuthFailures(listener) {
+  authListeners.add(listener)
+  const originalFetch = globalThis.fetch
+  const observedFetch = async (input, options = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url || input.href, location.href)
+    if (url.origin !== location.origin || !url.pathname.startsWith('/api/v1/') || url.pathname === '/api/v1/health') {
+      return originalFetch(input, options)
+    }
+    const headers = new Headers(options.headers || input.headers)
+    const token = headers.get('X-Console-Token') || ''
+    if (!token) {
+      notifyAuthRequired('token_required', token)
+      return new Response(JSON.stringify({ code: 'token_required', message: LOGIN_REQUIRED }), {
+        status: 403, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    const response = await originalFetch(input, options)
+    if (response.status === 403) {
+      const data = await response.clone().json().catch(() => null)
+      if (data?.code !== 'lease_mismatch') notifyAuthRequired(data?.code, token)
+    }
+    return response
+  }
+  globalThis.fetch = observedFetch
+  return () => {
+    authListeners.delete(listener)
+    if (globalThis.fetch === observedFetch) globalThis.fetch = originalFetch
+  }
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || ''
 }
 
 export function setToken(value) {
-  localStorage.setItem(TOKEN_KEY, value.trim())
+  if (value.trim()) localStorage.setItem(TOKEN_KEY, value.trim())
+  else localStorage.removeItem(TOKEN_KEY)
 }
 
 async function request(path, options = {}) {
+  requireToken()
   const headers = { ...(options.headers || {}) }
   const token = getToken()
   if (token) headers['X-Console-Token'] = token
@@ -24,7 +76,9 @@ async function request(path, options = {}) {
     }
   }
   if (!response.ok) {
-    const error = new Error((data && (data.message || data.detail)) || `HTTP ${response.status}`)
+    const message = response.status === 403 && data?.code !== 'lease_mismatch'
+      ? LOGIN_EXPIRED : (data && (data.message || data.detail)) || `HTTP ${response.status}`
+    const error = new Error(message)
     error.status = response.status
     error.code = data && data.code
     throw error
@@ -33,7 +87,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  createSession(config) {
+  verifyAuth() {
+    return request('/api/v1/auth', { cache: 'no-store' })
+  },
+  async createSession(config) {
+    await api.verifyAuth()
     return request('/api/v1/sessions', { method: 'POST', body: JSON.stringify({ config }) })
   },
   getSession(id) {
