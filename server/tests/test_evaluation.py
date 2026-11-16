@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 
 from fastapi.testclient import TestClient
@@ -97,9 +98,9 @@ class EvaluationApiTests(unittest.TestCase):
                 "(run_dir/'status.json').write_text(json.dumps({'state': 'completed', 'completed': 1, 'total': 1}))\n",
                 encoding="utf-8",
             )
-            return ["python", str(script), str(run_dir)]
+            return [sys.executable, str(script), str(run_dir)]
 
-        self.evaluations = EvaluationService(root / "evaluations", python="python", command_factory=fake_runner)
+        self.evaluations = EvaluationService(root / "evaluations", python=sys.executable, command_factory=fake_runner)
         service = SessionService(root / "sessions", MemoryWorker(), clock=lambda: NOW)
         self.client = TestClient(
             create_app(service, "eval-token", evaluations=self.evaluations), base_url="http://127.0.0.1"

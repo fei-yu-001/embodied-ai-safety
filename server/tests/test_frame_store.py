@@ -80,6 +80,7 @@ class FrameStoreTests(unittest.TestCase):
             holder.close()
         self.assertEqual(store.latest()["seq"], 2)
 
+    @unittest.skipUnless(os.name == "nt", "Windows denies replacing an open file")
     def test_held_latest_copy_is_reported_as_warning_not_failure(self):
         """latest.jpg 被占用：编号帧照发，只记 warning，不谎报失败。"""
         store = FrameStore(self.dir)

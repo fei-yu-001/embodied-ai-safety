@@ -6,7 +6,7 @@ sudo install -d -o "$USER" -g "$USER" "$root" "$root/shared" "$root/releases"
 python3 -m venv "$root/shared/venv"
 "$root/shared/venv/bin/pip" install --upgrade pip wheel setuptools
 "$root/shared/venv/bin/pip" install -r server/requirements.txt -r deploy/requirements-simulation.txt
-mkdir -p "$root/shared/vendor"
+mkdir -p "$root/shared/vendor" "$root/shared/sessions" "$root/shared/cache"
 if [[ ! -d "$root/shared/vendor/robocasa/.git" ]]; then
     git clone --filter=blob:none https://github.com/robocasa/robocasa.git "$root/shared/vendor/robocasa"
 fi

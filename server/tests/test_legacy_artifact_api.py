@@ -184,6 +184,7 @@ class LegacyArtifactApiTests(unittest.TestCase):
             with self.subTest(run_id=attempt):
                 self.assertEqual(response.status_code, 404)
 
+    @unittest.skipUnless(os.name == "nt", "Windows directory junctions")
     def test_junction_escape_is_rejected(self):
         outside = self.root / "junction_target"
         write_json(outside / "job.json", {"id": "junction_target", "status": "completed"})

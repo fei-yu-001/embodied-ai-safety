@@ -49,6 +49,7 @@ python -m server.main
 ## 测试
 
 ```bash
+python -m pip install -r server/requirements-dev.txt
 python -m unittest discover -s server/tests -q
 node web/tests/scene-hierarchy.mjs
 node web/tests/visual-assets-and-glass.mjs

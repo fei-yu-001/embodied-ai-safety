@@ -219,6 +219,7 @@ class LegacyRunsTests(unittest.TestCase):
         self.assertIsNone(get_legacy_run("run_linked", self.runs_dir, self.output_dir))
         self.assertFalse(link.is_symlink() and not link.exists())
 
+    @unittest.skipUnless(os.name == "nt", "Windows directory junctions")
     def test_junction_escape_is_rejected(self):
         outside = self.root / "junction_target"
         write_json(outside / "job.json", {"id": "junction_target", "status": "completed"})
